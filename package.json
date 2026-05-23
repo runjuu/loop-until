@@ -20,7 +20,7 @@
     "dist/"
   ],
   "bin": {
-    "loop-until": "./bin/loop-until.js"
+    "loop-until": "bin/loop-until.js"
   },
   "scripts": {
     "build": "tsgo -p tsconfig.json",
