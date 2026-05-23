@@ -77,11 +77,28 @@ loop-until \
 - `--max-loops <n>`: maximum loop iterations. Defaults to `10`.
 - `--max <n>`: alias for `--max-loops`.
 - `--cwd <dir>`: working directory forwarded to `codex exec`.
-- `--model <model>`: model forwarded to Codex.
+- `--model <model>`: model for worker Codex calls. Defaults to `gpt-5.5`.
+- `--reasoning-effort <effort>`: reasoning effort for worker Codex calls. Defaults to `xhigh`.
+- `--until-model <model>`: model for the judge Codex call. Defaults to `gpt-5.4-mini`.
+- `--until-reasoning-effort <effort>`: reasoning effort for the judge Codex call. Defaults to `high`.
 - `--sandbox <mode>`: sandbox mode forwarded to worker Codex calls.
 - `--approval <policy>`: approval policy forwarded to worker Codex calls.
 - `--json`: emit `loop-until` progress events as JSONL.
 - `-h`, `--help`: show CLI help.
+
+By default, worker turns use GPT-5.5 with extra-high reasoning, while the
+`--until` judge uses GPT-5.4-Mini with high reasoning:
+
+```sh
+loop-until \
+  --model gpt-5.5 \
+  --reasoning-effort xhigh \
+  --until-model gpt-5.4-mini \
+  --until-reasoning-effort high \
+  "Run tests" \
+  --until "all tests pass" \
+  "Fix the failures"
+```
 
 ## Exit Codes
 

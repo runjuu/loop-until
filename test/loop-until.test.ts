@@ -39,6 +39,10 @@ describe('loop-until', () => {
     expect(parsed.afterPrompts).toEqual(['Apply fix']);
     expect(parsed.condition).toBe('no findings');
     expect(parsed.options.maxLoops).toBe(10);
+    expect(parsed.options.model).toBe('gpt-5.5');
+    expect(parsed.options.reasoningEffort).toBe('xhigh');
+    expect(parsed.options.untilModel).toBe('gpt-5.4-mini');
+    expect(parsed.options.untilReasoningEffort).toBe('high');
   });
 
   test('parses --until after multiple prompts and supports final checkpoint', () => {
@@ -130,13 +134,15 @@ describe('loop-until', () => {
     expect(fake.workerPrompts()).toEqual(['Review', 'Review']);
   });
 
-  test('forwards configured codex options to worker and judge calls', async () => {
+  test('forwards configured worker options and default judge options', async () => {
     const fake = createFakeCodex([{ done: true, reason: 'clean' }]);
     const parsed = parseRunArgs([
       '--cwd',
       '/tmp/example',
       '--model',
       'test-model',
+      '--reasoning-effort',
+      'low',
       '--sandbox',
       'read-only',
       '--approval',
@@ -153,15 +159,51 @@ describe('loop-until', () => {
 
     expect(fake.calls[0].args.slice(0, 3)).toEqual(['-a', 'never', 'exec']);
     expect(optionValue(fake.calls[0].args, '-m')).toBe('test-model');
+    expect(configValue(fake.calls[0].args, 'model_reasoning_effort')).toBe('"low"');
     expect(optionValue(fake.calls[0].args, '-C')).toBe('/tmp/example');
     expect(optionValue(fake.calls[0].args, '-s')).toBe('read-only');
 
     const judgeCall = fake.calls.find((call) => call.args.includes('--output-schema'));
     expect(judgeCall).toBeDefined();
     expect(judgeCall?.args.slice(0, 3)).toEqual(['-a', 'never', 'exec']);
-    expect(optionValue(judgeCall?.args ?? [], '-m')).toBe('test-model');
+    expect(optionValue(judgeCall?.args ?? [], '-m')).toBe('gpt-5.4-mini');
+    expect(configValue(judgeCall?.args ?? [], 'model_reasoning_effort')).toBe('"high"');
     expect(optionValue(judgeCall?.args ?? [], '-C')).toBe('/tmp/example');
     expect(optionValue(judgeCall?.args ?? [], '-s')).toBe('read-only');
+  });
+
+  test('supports independent judge model and reasoning effort', async () => {
+    const fake = createFakeCodex([{ done: true, reason: 'clean' }]);
+    const parsed = parseRunArgs([
+      '--model',
+      'worker-model',
+      '--reasoning-effort',
+      'medium',
+      '--until-model',
+      'judge-model',
+      '--until-reasoning-effort',
+      'xhigh',
+      'Review',
+      '--until',
+      'clean',
+    ]);
+
+    await runLoop(parsed, {
+      runCodex: fake.runCodex,
+      stdout: sink(),
+      stderr: sink(),
+    });
+
+    const workerCall = fake.calls.find((call) => !call.args.includes('--output-schema'));
+    const judgeCall = fake.calls.find((call) => call.args.includes('--output-schema'));
+
+    expect(workerCall).toBeDefined();
+    expect(optionValue(workerCall?.args ?? [], '-m')).toBe('worker-model');
+    expect(configValue(workerCall?.args ?? [], 'model_reasoning_effort')).toBe('"medium"');
+
+    expect(judgeCall).toBeDefined();
+    expect(optionValue(judgeCall?.args ?? [], '-m')).toBe('judge-model');
+    expect(configValue(judgeCall?.args ?? [], 'model_reasoning_effort')).toBe('"xhigh"');
   });
 
   test('forwards cwd and sandbox to resumed worker calls', async () => {
@@ -483,6 +525,16 @@ function optionValue(args: string[], flag: string): string {
   const index = args.indexOf(flag);
   expect(index, `missing ${flag}`).not.toBe(-1);
   return args[index + 1];
+}
+
+function configValue(args: string[], key: string): string {
+  const prefix = `${key}=`;
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === '-c' && args[index + 1]?.startsWith(prefix)) {
+      return args[index + 1].slice(prefix.length);
+    }
+  }
+  throw new Error(`missing -c ${key}`);
 }
 
 function sink() {

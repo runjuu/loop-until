@@ -6,6 +6,10 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
 const DEFAULT_MAX_LOOPS = 10;
+const DEFAULT_MODEL = 'gpt-5.5';
+const DEFAULT_REASONING_EFFORT = 'xhigh';
+const DEFAULT_UNTIL_MODEL = 'gpt-5.4-mini';
+const DEFAULT_UNTIL_REASONING_EFFORT = 'high';
 
 const JUDGE_SCHEMA = {
   type: 'object',
@@ -24,6 +28,9 @@ interface LoopOptions {
   json: boolean;
   cwd?: string;
   model?: string;
+  reasoningEffort?: string;
+  untilModel?: string;
+  untilReasoningEffort?: string;
   sandbox?: string;
   approval?: string;
 }
@@ -109,6 +116,10 @@ function parseArgs(argv: string[]): ParsedArgs {
   const options: LoopOptions = {
     maxLoops: DEFAULT_MAX_LOOPS,
     json: false,
+    model: DEFAULT_MODEL,
+    reasoningEffort: DEFAULT_REASONING_EFFORT,
+    untilModel: DEFAULT_UNTIL_MODEL,
+    untilReasoningEffort: DEFAULT_UNTIL_REASONING_EFFORT,
   };
   const beforePrompts: string[] = [];
   const afterPrompts: string[] = [];
@@ -165,6 +176,27 @@ function parseArgs(argv: string[]): ParsedArgs {
     if (isValueOption(arg, '--model')) {
       const value = readOptionValue(argv, index, '--model');
       options.model = value.value;
+      index = value.index;
+      continue;
+    }
+
+    if (isValueOption(arg, '--reasoning-effort')) {
+      const value = readOptionValue(argv, index, '--reasoning-effort');
+      options.reasoningEffort = value.value;
+      index = value.index;
+      continue;
+    }
+
+    if (isValueOption(arg, '--until-model')) {
+      const value = readOptionValue(argv, index, '--until-model');
+      options.untilModel = value.value;
+      index = value.index;
+      continue;
+    }
+
+    if (isValueOption(arg, '--until-reasoning-effort')) {
+      const value = readOptionValue(argv, index, '--until-reasoning-effort');
+      options.untilReasoningEffort = value.value;
       index = value.index;
       continue;
     }
@@ -422,6 +454,7 @@ function buildWorkerStartArgs(prompt: string, outputPath: string, options: LoopO
   appendIfPresent(args, '-a', options.approval);
   args.push('exec', '--json', '-o', outputPath);
   appendIfPresent(args, '-m', options.model);
+  appendConfigIfPresent(args, 'model_reasoning_effort', options.reasoningEffort);
   appendIfPresent(args, '-C', options.cwd);
   appendIfPresent(args, '-s', options.sandbox);
   args.push(prompt);
@@ -440,6 +473,7 @@ function buildWorkerResumeArgs(
   appendIfPresent(args, '-s', options.sandbox);
   args.push('exec', 'resume', '--json', '-o', outputPath);
   appendIfPresent(args, '-m', options.model);
+  appendConfigIfPresent(args, 'model_reasoning_effort', options.reasoningEffort);
   args.push(sessionId, prompt);
   return args;
 }
@@ -457,7 +491,8 @@ function buildJudgeArgs(prompt: string, outputPath: string, schemaPath: string, 
     '-s',
     'read-only',
   ];
-  appendIfPresent(args, '-m', options.model);
+  appendIfPresent(args, '-m', options.untilModel ?? options.model);
+  appendConfigIfPresent(args, 'model_reasoning_effort', options.untilReasoningEffort ?? options.reasoningEffort);
   appendIfPresent(args, '-C', options.cwd);
   args.push(prompt);
   return args;
@@ -466,6 +501,12 @@ function buildJudgeArgs(prompt: string, outputPath: string, schemaPath: string, 
 function appendIfPresent(args: string[], flag: string, value: string | undefined): void {
   if (value) {
     args.push(flag, value);
+  }
+}
+
+function appendConfigIfPresent(args: string[], key: string, value: string | undefined): void {
+  if (value) {
+    args.push('-c', `${key}=${JSON.stringify(value)}`);
   }
 }
 
@@ -1034,7 +1075,11 @@ Options:
   --max-loops <n>         Maximum loop iterations. Default: ${DEFAULT_MAX_LOOPS}.
   --max <n>               Alias for --max-loops.
   --cwd <dir>             Forward working directory to codex exec.
-  --model <model>         Forward model to codex exec.
+  --model <model>         Model for worker Codex calls. Default: ${DEFAULT_MODEL}.
+  --reasoning-effort <e>  Reasoning effort for worker Codex calls. Default: ${DEFAULT_REASONING_EFFORT}.
+  --until-model <model>   Model for the judge Codex call. Default: ${DEFAULT_UNTIL_MODEL}.
+  --until-reasoning-effort <e>
+                          Reasoning effort for the judge Codex call. Default: ${DEFAULT_UNTIL_REASONING_EFFORT}.
   --sandbox <mode>        Forward sandbox mode to the worker codex exec.
   --approval <policy>     Forward approval policy to the worker codex exec.
   --json                  Emit loop-until progress as JSONL.
