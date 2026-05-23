@@ -1,7 +1,8 @@
 'use strict';
 
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
@@ -10,6 +11,8 @@ const DEFAULT_MODEL = 'gpt-5.5';
 const DEFAULT_REASONING_EFFORT = 'xhigh';
 const DEFAULT_UNTIL_MODEL = 'gpt-5.4-mini';
 const DEFAULT_UNTIL_REASONING_EFFORT = 'high';
+const DEFAULT_CODEX_BIN = 'codex';
+const CODEX_BIN_ENV_VAR = 'LOOP_UNTIL_CODEX_BIN';
 
 const JUDGE_SCHEMA = {
   type: 'object',
@@ -109,6 +112,15 @@ class CliUsageError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'CliUsageError';
+  }
+}
+
+class CodexNotFoundError extends Error {
+  constructor(bin: string) {
+    super(
+      `Codex CLI executable \`${bin}\` was not found or is not executable. Install Codex and make sure \`${bin}\` is available on your PATH, or set ${CODEX_BIN_ENV_VAR} to the Codex executable.`
+    );
+    this.name = 'CodexNotFoundError';
   }
 }
 
@@ -267,10 +279,15 @@ function parsePositiveInteger(value: string, flag: string): number {
 }
 
 async function runLoop(parsed: ParsedRunArgs, dependencies: RunLoopDependencies = {}): Promise<RunLoopResult> {
+  const codexBin = resolveCodexBin(dependencies.codexBin);
+  if (dependencies.runCodex === undefined) {
+    await ensureCodexExecutableAvailable(codexBin, dependencies.env ?? process.env);
+  }
+
   const runCodex =
     dependencies.runCodex ??
     createCodexRunner({
-      codexBin: dependencies.codexBin,
+      codexBin,
       env: dependencies.env,
     });
   const stdout = dependencies.stdout ?? process.stdout;
@@ -685,7 +702,7 @@ function numberValue(value: unknown): number | undefined {
 }
 
 function createCodexRunner({ codexBin, env }: { codexBin?: string; env?: NodeJS.ProcessEnv } = {}): RunCodex {
-  const bin = codexBin ?? process.env.LOOP_UNTIL_CODEX_BIN ?? 'codex';
+  const bin = resolveCodexBin(codexBin);
   const childEnv = env ?? process.env;
 
   return function runCodex(args: string[], context: CodexRunContext): Promise<CodexResult> {
@@ -712,7 +729,13 @@ function createCodexRunner({ codexBin, env }: { codexBin?: string; env?: NodeJS.
           context.onStderrChunk(chunk);
         }
       });
-      child.on('error', reject);
+      child.on('error', (error) => {
+        if (isMissingExecutableError(error)) {
+          reject(new CodexNotFoundError(bin));
+          return;
+        }
+        reject(error);
+      });
       child.on('close', (code, signal) => {
         resolve({
           code,
@@ -724,6 +747,59 @@ function createCodexRunner({ codexBin, env }: { codexBin?: string; env?: NodeJS.
       });
     });
   };
+}
+
+function resolveCodexBin(codexBin: string | undefined): string {
+  return codexBin ?? process.env[CODEX_BIN_ENV_VAR] ?? DEFAULT_CODEX_BIN;
+}
+
+async function ensureCodexExecutableAvailable(bin: string, env: NodeJS.ProcessEnv): Promise<void> {
+  if (hasPathSeparator(bin)) {
+    if (await canExecute(bin)) {
+      return;
+    }
+    throw new CodexNotFoundError(bin);
+  }
+
+  const pathValue = env.PATH ?? process.env.PATH ?? '';
+  for (const directory of pathValue.split(path.delimiter)) {
+    if (!directory) {
+      continue;
+    }
+
+    for (const candidate of executableCandidates(path.join(directory, bin), env)) {
+      if (await canExecute(candidate)) {
+        return;
+      }
+    }
+  }
+
+  throw new CodexNotFoundError(bin);
+}
+
+function hasPathSeparator(bin: string): boolean {
+  return bin.includes('/') || bin.includes('\\');
+}
+
+function executableCandidates(candidate: string, env: NodeJS.ProcessEnv): string[] {
+  if (process.platform !== 'win32' || path.extname(candidate)) {
+    return [candidate];
+  }
+
+  const extensions = (env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD')
+    .split(';')
+    .map((extension) => extension.trim())
+    .filter((extension) => extension.length > 0);
+  return [candidate, ...extensions.map((extension) => `${candidate}${extension}`)];
+}
+
+async function canExecute(candidate: string): Promise<boolean> {
+  try {
+    await access(candidate, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function ensureCodexSuccess(result: CodexResult, args: string[]): void {
@@ -1129,6 +1205,10 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error;
+}
+
+function isMissingExecutableError(error: unknown): error is NodeJS.ErrnoException {
+  return isNodeError(error) && error.code === 'ENOENT';
 }
 
 function errorMessage(error: unknown): string {

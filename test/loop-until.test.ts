@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import { describe, expect, test } from 'vitest';
-import { parseArgs, runLoop } from '../src/index';
+import { main, parseArgs, runLoop } from '../src/index';
 
 type ParsedRunArgs = Extract<ReturnType<typeof parseArgs>, { beforePrompts: string[] }>;
 
@@ -457,6 +457,33 @@ describe('loop-until', () => {
         delete process.env.NO_COLOR;
       } else {
         process.env.NO_COLOR = previousNoColor;
+      }
+    }
+  });
+
+  test('prints a helpful message when the Codex CLI is not installed', async () => {
+    const previousCodexBin = process.env.LOOP_UNTIL_CODEX_BIN;
+    process.env.LOOP_UNTIL_CODEX_BIN = 'loop-until-definitely-missing-codex-bin';
+
+    try {
+      const stdout = collectWrites();
+      const stderr = collectWrites();
+      const exitCode = await main(['Review', '--until', 'clean'], {
+        stdout,
+        stderr,
+      });
+
+      expect(exitCode).toBe(1);
+      expect(stdout.text()).toBe('');
+      expect(stderr.text()).toContain(
+        'Codex CLI executable `loop-until-definitely-missing-codex-bin` was not found or is not executable.'
+      );
+      expect(stderr.text()).toContain('LOOP_UNTIL_CODEX_BIN');
+    } finally {
+      if (previousCodexBin === undefined) {
+        delete process.env.LOOP_UNTIL_CODEX_BIN;
+      } else {
+        process.env.LOOP_UNTIL_CODEX_BIN = previousCodexBin;
       }
     }
   });
