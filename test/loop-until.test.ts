@@ -231,10 +231,10 @@ describe('loop-until', () => {
 
     expect(result.exitCode).toBe(0);
     expect(callCount).toBe(2);
-    expect(stdout.text()).toContain('codex worker step 1 output:');
-    expect(stdout.text()).toContain('worker final output');
-    expect(stdout.text()).toContain('codex judge output:');
-    expect(stdout.text()).toContain('"reason":"clean"');
+    expect(stdout.text()).toContain('== Loop 1/10 ==\n');
+    expect(stdout.text()).toContain('-- Step 1/1: Review --\n');
+    expect(stdout.text()).toContain('-- Codex worker step 1 output --\n    worker final output\n');
+    expect(stdout.text()).toContain('-- Codex judge output --\n    {\n      "done": true,\n      "reason": "clean"\n    }\n');
     expect(stderr.text()).toBe('worker stderr\njudge stderr\n');
   });
 
@@ -330,15 +330,93 @@ describe('loop-until', () => {
     });
 
     const output = stdout.text();
-    expect(output).toContain('codex worker step 1: thread started: worker-session');
-    expect(output).toContain('codex worker step 1: running command: /bin/zsh -lc git status --short');
-    expect(output).toContain('codex worker step 1: command completed: /bin/zsh -lc git status --short (exit 0)');
-    expect(output).toContain(' M src/index.ts\n');
-    expect(output).toContain('codex worker step 1 output:\nlive worker output\n');
-    expect(countOccurrences(output, 'codex worker step 1 output:')).toBe(1);
-    expect(output).toContain('codex judge output:\n{"done":true,"reason":"clean"}\n');
-    expect(countOccurrences(output, 'codex judge output:')).toBe(1);
+    expect(output).toContain('[worker step 1] thread started: worker-session');
+    expect(output).toContain('[worker step 1] running command: /bin/zsh -lc git status --short');
+    expect(output).toContain('[worker step 1] command completed: /bin/zsh -lc git status --short (exit 0)');
+    expect(output).toContain('     M src/index.ts\n');
+    expect(output).toContain('-- Codex worker step 1 output --\n    live worker output\n');
+    expect(countOccurrences(output, '-- Codex worker step 1 output --')).toBe(1);
+    expect(output).toContain('-- Codex judge output --\n    {\n      "done": true,\n      "reason": "clean"\n    }\n');
+    expect(countOccurrences(output, '-- Codex judge output --')).toBe(1);
     expect(stderr.text()).toBe('worker live stderr\njudge live stderr\n');
+  });
+
+  test('colors only loop-until lifecycle lines when stdout is a TTY', async () => {
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+
+    try {
+      const fake = createFakeCodex([{ done: true, reason: 'clean' }]);
+      const stdout = collectWrites({ isTTY: true });
+      const parsed = parseRunArgs(['Review', '--until', 'clean']);
+
+      await runLoop(parsed, {
+        runCodex: fake.runCodex,
+        stdout,
+        stderr: sink(),
+      });
+
+      const output = stdout.text();
+      expect(output).toContain('\u001B[1;36m== Loop 1/10 ==\u001B[0m\n');
+      expect(output).toContain('\u001B[1;34m-- Step 1/1: Review --\u001B[0m\n');
+      expect(output).toContain('\u001B[33m-- Judge: checking completion condition --\u001B[0m\n');
+      expect(output).toContain('\u001B[33m-- Judge: done=true - clean --\u001B[0m\n');
+      expect(output).toContain('\u001B[32m== Done after loop 1 ==\u001B[0m\n');
+
+      const codexLines = output
+        .split('\n')
+        .filter((line) => line.includes('Codex') || line.includes('output for Review') || line.includes('"done"'));
+      expect(codexLines.every((line) => !hasAnsi(line))).toBe(true);
+
+      const maxFake = createFakeCodex([{ done: false, reason: 'not yet' }]);
+      const maxStdout = collectWrites({ isTTY: true });
+      await runLoop(parseRunArgs(['Review', '--until', 'clean', '--max-loops', '1']), {
+        runCodex: maxFake.runCodex,
+        stdout: maxStdout,
+        stderr: sink(),
+      });
+      expect(maxStdout.text()).toContain('\u001B[31m== Reached --max-loops=1 ==\u001B[0m\n');
+    } finally {
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
+  });
+
+  test('does not color human output when stdout is not a TTY or NO_COLOR is set', async () => {
+    const fake = createFakeCodex([
+      { done: true, reason: 'clean' },
+      { done: true, reason: 'clean' },
+    ]);
+    const parsed = parseRunArgs(['Review', '--until', 'clean']);
+
+    const pipedStdout = collectWrites();
+    await runLoop(parsed, {
+      runCodex: fake.runCodex,
+      stdout: pipedStdout,
+      stderr: sink(),
+    });
+    expect(hasAnsi(pipedStdout.text())).toBe(false);
+
+    const previousNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    try {
+      const noColorStdout = collectWrites({ isTTY: true });
+      await runLoop(parsed, {
+        runCodex: fake.runCodex,
+        stdout: noColorStdout,
+        stderr: sink(),
+      });
+      expect(hasAnsi(noColorStdout.text())).toBe(false);
+    } finally {
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
   });
 });
 
@@ -413,9 +491,10 @@ function sink() {
   };
 }
 
-function collectWrites() {
+function collectWrites(options: { isTTY?: boolean } = {}) {
   const chunks: string[] = [];
   return {
+    isTTY: options.isTTY,
     write(chunk: string) {
       chunks.push(chunk);
     },
@@ -427,4 +506,8 @@ function collectWrites() {
 
 function countOccurrences(text: string, search: string): number {
   return text.split(search).length - 1;
+}
+
+function hasAnsi(text: string): boolean {
+  return /\u001B\[[0-9;]*m/.test(text);
 }

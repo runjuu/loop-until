@@ -31,10 +31,14 @@ In this example:
 4. Otherwise, the fix prompts are sent to the same Codex chat.
 5. The next loop starts again with a fresh Codex chat.
 
-Codex JSONL progress is streamed while each step runs, including thread starts,
-turn starts, command starts, command completions, and command output. Worker and
-judge final messages are printed to stdout as explicit Codex output blocks. Any
-Codex stderr output is forwarded to stderr instead of being hidden.
+Codex JSONL progress is streamed as human-readable progress while each step
+runs, including thread starts, turn starts, command starts, command completions,
+and command output. Worker and judge final messages are printed to stdout as
+explicit Codex output blocks, with Codex text indented and JSON output
+pretty-printed in the default human-readable mode. `loop-until` status lines use
+TTY-only color when available and `NO_COLOR` is not set; Codex output remains
+uncolored. Any Codex stderr output is forwarded to stderr instead of being
+hidden.
 
 ## Examples
 

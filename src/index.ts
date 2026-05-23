@@ -55,6 +55,7 @@ type RunCodex = (args: string[], context: CodexRunContext) => Promise<CodexResul
 
 interface WritableLike {
   write(chunk: string): unknown;
+  isTTY?: boolean;
 }
 
 interface RunLoopDependencies {
@@ -899,6 +900,15 @@ function emitCodexOutput(
   });
 }
 
+const ANSI = {
+  reset: '\u001B[0m',
+  boldCyan: '\u001B[1;36m',
+  boldBlue: '\u001B[1;34m',
+  yellow: '\u001B[33m',
+  green: '\u001B[32m',
+  red: '\u001B[31m',
+} as const;
+
 function createEmitter({ json, stdout }: { json: boolean; stdout: WritableLike }): (event: LoopEvent) => void {
   if (json) {
     return (event) => {
@@ -906,14 +916,20 @@ function createEmitter({ json, stdout }: { json: boolean; stdout: WritableLike }
     };
   }
 
+  const colorEnabled = shouldColor(stdout);
+
   return (event) => {
     switch (event.type) {
       case 'loop_started':
-        stdout.write(`loop-until: loop ${event.loop}/${event.maxLoops}\n`);
+        stdout.write(formatLoopLine(`== Loop ${event.loop}/${event.maxLoops} ==`, 'boldCyan', colorEnabled));
         break;
       case 'step_started':
         stdout.write(
-          `loop-until: step ${event.step}/${event.totalSteps}: ${summarize(event.prompt)}\n`
+          formatLoopLine(
+            `-- Step ${event.step}/${event.totalSteps}: ${summarize(event.prompt)} --`,
+            'boldBlue',
+            colorEnabled
+          )
         );
         break;
       case 'step_finished':
@@ -921,49 +937,82 @@ function createEmitter({ json, stdout }: { json: boolean; stdout: WritableLike }
       case 'codex_output':
         if (event.output) {
           stdout.write(formatCodexOutputHeader(event));
-          stdout.write(`${event.output}\n`);
+          stdout.write(formatIndentedBlock(formatDisplayOutput(event.output)));
         }
         break;
       case 'codex_event':
         stdout.write(formatCodexEvent(event));
         if (event.output) {
-          stdout.write(event.output);
-          if (!event.output.endsWith('\n')) {
-            stdout.write('\n');
-          }
+          stdout.write(formatIndentedBlock(event.output));
         }
         break;
       case 'judge_started':
-        stdout.write('loop-until: checking completion condition\n');
+        stdout.write(formatLoopLine('-- Judge: checking completion condition --', 'yellow', colorEnabled));
         break;
       case 'judge_finished':
         stdout.write(
-          `loop-until: judge done=${String(event.done)} - ${event.reason}\n`
+          formatLoopLine(
+            `-- Judge: done=${String(event.done)} - ${event.reason} --`,
+            'yellow',
+            colorEnabled
+          )
         );
         break;
       case 'done':
-        stdout.write(`loop-until: done after loop ${event.loop}\n`);
+        stdout.write(formatLoopLine(`== Done after loop ${event.loop} ==`, 'green', colorEnabled));
         break;
       case 'max_loops_reached':
-        stdout.write(`loop-until: reached --max-loops=${event.maxLoops}\n`);
+        stdout.write(formatLoopLine(`== Reached --max-loops=${event.maxLoops} ==`, 'red', colorEnabled));
         break;
     }
   };
 }
 
+function shouldColor(stdout: WritableLike): boolean {
+  return stdout.isTTY === true && !Object.prototype.hasOwnProperty.call(process.env, 'NO_COLOR');
+}
+
+function formatLoopLine(text: string, color: keyof typeof ANSI, colorEnabled: boolean): string {
+  if (!colorEnabled) {
+    return `${text}\n`;
+  }
+  return `${ANSI[color]}${text}${ANSI.reset}\n`;
+}
+
 function formatCodexEvent(event: Extract<LoopEvent, { type: 'codex_event' }>): string {
-  const prefix =
-    event.role === 'worker' && event.step !== undefined
-      ? `codex worker step ${event.step}`
-      : `codex ${event.role}`;
-  return `${prefix}: ${event.message}\n`;
+  return `[${formatCodexRole(event)}] ${event.message}\n`;
 }
 
 function formatCodexOutputHeader(event: Extract<LoopEvent, { type: 'codex_output' }>): string {
+  return `-- Codex ${formatCodexRole(event)} output --\n`;
+}
+
+function formatCodexRole(event: { role: CodexRole; step?: number }): string {
   if (event.role === 'worker' && event.step !== undefined) {
-    return `codex worker step ${event.step} output:\n`;
+    return `worker step ${event.step}`;
   }
-  return `codex ${event.role} output:\n`;
+  return event.role;
+}
+
+function formatIndentedBlock(text: string): string {
+  const lines = String(text).replace(/\r\n/g, '\n').split('\n');
+  if (lines.at(-1) === '') {
+    lines.pop();
+  }
+  return `${lines.map((line) => `    ${line}`).join('\n')}\n`;
+}
+
+function formatDisplayOutput(text: string): string {
+  const trimmed = String(text).trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  try {
+    return JSON.stringify(JSON.parse(trimmed) as unknown, null, 2);
+  } catch {
+    return String(text);
+  }
 }
 
 function summarize(text: string): string {
