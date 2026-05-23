@@ -31,6 +31,11 @@ In this example:
 4. Otherwise, the fix prompts are sent to the same Codex chat.
 5. The next loop starts again with a fresh Codex chat.
 
+Codex JSONL progress is streamed while each step runs, including thread starts,
+turn starts, command starts, command completions, and command output. Worker and
+judge final messages are printed to stdout as explicit Codex output blocks. Any
+Codex stderr output is forwarded to stderr instead of being hidden.
+
 ## Examples
 
 Run tests until they pass:
@@ -97,14 +102,38 @@ only evaluate the checkpoint output against the `--until` condition.
 
 ## Development
 
+Install dependencies:
+
+```sh
+npm install
+```
+
+This project uses the TypeScript 7.0 beta native compiler through
+`@typescript/native-preview` and the `tsgo` executable.
+
+Build the CommonJS output in `dist`:
+
+```sh
+npm run build
+```
+
+Type-check without emitting:
+
+```sh
+npm run typecheck
+```
+
 Run tests with:
 
 ```sh
 npm test
 ```
 
+Tests are written in TypeScript and run with Vitest.
+
 Run the CLI locally with:
 
 ```sh
+npm run build
 node bin/loop-until.js --help
 ```

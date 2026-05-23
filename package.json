@@ -13,11 +13,24 @@
   "license": "ISC",
   "author": "runjuu",
   "type": "commonjs",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "bin/",
+    "dist/"
+  ],
   "bin": {
     "loop-until": "./bin/loop-until.js"
   },
   "scripts": {
-    "test": "node --test"
+    "build": "tsgo -p tsconfig.json",
+    "prepare": "npm run build",
+    "test": "npm run typecheck && vitest run",
+    "typecheck": "tsgo -p tsconfig.json --noEmit && tsgo -p tsconfig.test.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.4",
+    "@typescript/native-preview": "^7.0.0-dev.20260421.2",
+    "vitest": "^4.1.7"
   }
 }
