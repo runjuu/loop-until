@@ -158,3 +158,31 @@ Run the CLI locally with:
 npm run build
 node bin/loop-until.js --help
 ```
+
+## Releasing
+
+Releases are published to npm by GitHub Actions through npm Trusted Publisher.
+The workflow is `.github/workflows/npm-publish.yml` and runs when a `v*` tag is
+pushed. The tag must match the version in `package.json`.
+
+Before the first automated release, configure the package on npm:
+
+- Go to the package settings on npmjs.com and add a Trusted Publisher.
+- Select GitHub Actions.
+- Set organization or user to `runjuu`.
+- Set repository to `loop-until`.
+- Set workflow filename to `npm-publish.yml`.
+- Leave environment name empty unless the workflow is changed to use a GitHub
+  environment.
+
+Then release by updating `package.json` and `package-lock.json`, committing the
+change, and pushing a matching tag:
+
+```sh
+npm version patch
+git push --follow-tags
+```
+
+The publish workflow uses GitHub OIDC and does not require an `NPM_TOKEN`
+secret. After Trusted Publisher is verified, npm's package settings can be
+tightened to require two-factor authentication and disallow token publishing.
