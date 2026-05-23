@@ -9,13 +9,13 @@ inside that loop continue in the same chat.
 ## Usage
 
 ```sh
-loop-until [options] <prompt...> --until <condition> [prompt...]
+npx loop-until@latest [options] <prompt...> --until <condition> [prompt...]
 ```
 
 The `--until` marker is placed after the step that should be judged:
 
 ```sh
-loop-until \
+npx loop-until@latest \
   "Please review my uncommitted changes" \
   --until "there are no actionable findings" \
   "Propose the best fix" \
@@ -45,7 +45,7 @@ hidden.
 Run tests until they pass:
 
 ```sh
-loop-until \
+npx loop-until@latest \
   "Run the test suite" \
   --until "all tests pass" \
   "Diagnose the failures" \
@@ -55,7 +55,7 @@ loop-until \
 Judge after multiple setup/check steps:
 
 ```sh
-loop-until \
+npx loop-until@latest \
   "Build the project" \
   "Run the smoke test" \
   --until "the build succeeds and the smoke test passes" \
@@ -65,7 +65,7 @@ loop-until \
 Only repeat the checked step:
 
 ```sh
-loop-until \
+npx loop-until@latest \
   --max-loops 3 \
   "Check whether the release branch is ready" \
   --until "the branch is ready to release"
@@ -90,7 +90,7 @@ By default, worker turns use GPT-5.5 with extra-high reasoning, while the
 `--until` judge uses GPT-5.4-Mini with high reasoning:
 
 ```sh
-loop-until \
+npx loop-until@latest \
   --model gpt-5.5 \
   --reasoning-effort xhigh \
   --until-model gpt-5.4-mini \
