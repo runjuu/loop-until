@@ -1,0 +1,23 @@
+{
+  "name": "loop-until",
+  "version": "1.0.0",
+  "description": "",
+  "homepage": "https://github.com/runjuu/loop-until#readme",
+  "bugs": {
+    "url": "https://github.com/runjuu/loop-until/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runjuu/loop-until.git"
+  },
+  "license": "ISC",
+  "author": "runjuu",
+  "type": "commonjs",
+  "main": "index.js",
+  "bin": {
+    "loop-until": "./bin/loop-until.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
